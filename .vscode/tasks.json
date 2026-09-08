@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label": "NEON：首次安裝", "type": "process", "command": "powershell.exe", "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/setup.ps1"], "problemMatcher": []},
+    {"label": "NEON：測試", "type": "process", "command": "${workspaceFolder}/.venv/Scripts/python.exe", "args": ["-m", "unittest", "discover", "-s", "tests", "-v"], "options": {"cwd": "${workspaceFolder}"}, "group": "test", "problemMatcher": []},
+    {"label": "NEON：打包 EXE", "type": "process", "command": "powershell.exe", "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1"], "group": "build", "problemMatcher": []}
+  ]
+}
