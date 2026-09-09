@@ -1,11 +1,12 @@
 # Third-party software
 
-The NEON application source is MIT licensed. This does not replace the licenses of its dependencies.
+The NEON MeetStudio application source is MIT licensed. This does not replace the licenses of its dependencies.
 
 | Component | Upstream | License |
 | --- | --- | --- |
 | yt-dlp | https://github.com/yt-dlp/yt-dlp | Unlicense (Python distribution) |
 | yt-dlp-ejs | https://github.com/yt-dlp/ejs | Unlicense; bundled MIT/ISC components |
+| PyAudioWPatch | https://github.com/s0d3s/PyAudioWPatch | Apache-2.0; underlying PyAudio and PortAudio MIT notices retained |
 | CustomTkinter | https://github.com/TomSchimansky/CustomTkinter | MIT |
 | Python | https://www.python.org | PSF license and included third-party notices |
 | PyInstaller | https://pyinstaller.org | GPL with bootloader exception |

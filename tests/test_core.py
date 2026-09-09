@@ -17,7 +17,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(o['postprocessors'][0]['preferredcodec'],'mp3')
         self.assertTrue(o['writesubtitles'])
     def test_share_text(self):
-        self.assertEqual(valid_urls('看看這支影片 https://v.douyin.com/abc/ 複製後打開抖音'), ['https://v.douyin.com/abc/'])
+        self.assertEqual(valid_urls('看看這支影片 https://v.douyin.com/abc/ 複製後開啟抖音'), ['https://v.douyin.com/abc/'])
         self.assertEqual(valid_urls('影片：https://www.youtube.com/watch?v=abc。'), ['https://www.youtube.com/watch?v=abc'])
     def test_platforms(self):
         for url, name in [('https://youtu.be/abc','YouTube'),('https://v.douyin.com/abc','抖音'),('https://fb.watch/abc','Facebook'),('https://vm.tiktok.com/abc','TikTok')]:

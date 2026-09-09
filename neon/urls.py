@@ -1,4 +1,4 @@
-"""從網址或平台分享文字取出連結；平台標籤不代替 yt-dlp 解析器。"""
+"""從網址或平臺分享文字取出連結；平臺標籤不代替 yt-dlp 解析器。"""
 import re
 from urllib.parse import urlsplit
 
@@ -25,13 +25,13 @@ def valid_urls(text):
             parsed = urlsplit(value)
             if not parsed.hostname or parsed.username or parsed.password:
                 raise ValueError()
-            parsed.port  # 驗證連接埠格式
+            parsed.port  # 驗證連線埠格式
         except ValueError:
             raise ValueError('連結格式不正確，請重新複製影片網址。') from None
         if value not in urls:
             urls.append(value)
     if not urls:
-        raise ValueError('請貼上 http / https 影片網址，也可貼平台的整段分享文字。')
+        raise ValueError('請貼上 http / https 影片網址，也可貼平臺的整段分享文字。')
     return urls
 
 def platform_name(url):

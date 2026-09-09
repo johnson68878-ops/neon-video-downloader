@@ -1,161 +1,322 @@
-"""繁體中文桌面介面與背景程序控制。"""
-import json, os, sys, queue, subprocess, threading, time, tempfile
+"""NEON MeetStudio — simplified Chinese native desktop shell."""
+import ctypes
+import json
+import os
+import queue
+import sys
+import threading
+import time
 from pathlib import Path
+import customtkinter as ctk
+from tkinter import filedialog, messagebox
 from .runtime import ROOT
-from .urls import valid_urls, platform_name
-from .downloader import QUALITY_CHOICES
+from .recorder import Recorder, monitors
+from .download_ui import build_download
+from .meetings import open_scheduler
+
+BG = '#F3F6FB'
+INK = '#182D48'
+MUTED = '#586C84'
+BLUE = '#1262CC'
+TEAL = '#087F8C'
+FONT = 'Microsoft YaHei UI'
+VERSION = '2.1.0'
+
+
+def label(parent, text, size=14, color=INK, bold=False, **kw):
+    return ctk.CTkLabel(parent, text=text, text_color=color,
+                        font=(FONT, size, 'bold' if bold else 'normal'), **kw)
+
+
+def button(parent, text, command, color=BLUE, **kw):
+    return ctk.CTkButton(parent, text=text, command=command, fg_color=color if kw.get('state') != 'disabled' else '#E1E7EF', text_color_disabled='#8290A3',
+                         hover_color='#244E79', height=40, corner_radius=9,
+                         font=(FONT, 13), **kw)
+
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title('NEON MeetStudio · 錄屏與影音下載')
+        self.geometry('1180x820+40+40'); self.minsize(1040, 760)
+        if (ROOT/'assets'/'meetstudio.ico').exists():self.iconbitmap(str(ROOT/'assets'/'meetstudio.ico'))
+        self.configure(fg_color=BG)
+        self.events = queue.Queue(); self.recorder = None
+        self.record_state = 'idle'; self.last_file = None; self.region = None
+        self.countdown_id = None; self.floatbar = None
+        self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(1, weight=1)
+        header = ctk.CTkFrame(self, fg_color='white', corner_radius=0, height=68)
+        header.grid(row=0, column=0, columnspan=2, sticky='ew'); header.pack_propagate(False)
+        label(header, 'NEON', 23, BLUE, True).pack(side='left', padx=(24, 22))
+        label(header, '會議影音工作站', 21, INK, True).pack(side='left')
+        label(header, 'MeetStudio', 13, MUTED).pack(side='left', padx=10)
+        self.meeting_button = button(header, '預約騰訊會議', self.open_meeting, width=140)
+        self.meeting_button.pack(side='right', padx=25)
+        self.meeting_hint = label(header, '開啟後選擇“預定會議”', 12, MUTED)
+        self.meeting_hint.pack(side='right')
+        sidebar = ctk.CTkFrame(self, width=185, corner_radius=0, fg_color='#EAF0F8')
+        sidebar.grid(row=1, column=0, sticky='nsew'); sidebar.grid_propagate(False)
+        label(sidebar, '工作空間', 12, MUTED).pack(anchor='w', padx=22, pady=(27, 15))
+        self.nav = {}
+        for name in ['會議錄屏', '影音下載', '關於程式']:
+            b = button(sidebar, name, lambda n=name: self.show(n), width=150)
+            b.pack(padx=16, pady=5); self.nav[name] = b
+        label(sidebar, f'版本 {VERSION}\nWindows · 本地儲存', 11, MUTED, justify='left').pack(side='bottom', anchor='w', padx=22, pady=16)
+        self.body = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self.body.grid(row=1, column=1, sticky='nsew'); self.body.grid_columnconfigure(0, weight=1); self.body.grid_rowconfigure(0, weight=1)
+        self.pages = {}
+        self.record_page = self.make_record(); self.pages['會議錄屏'] = self.record_page
+        self.download = build_download(self.body); self.pages['影音下載'] = self.download
+        self.pages['關於程式'] = self.make_about()
+        self.show('會議錄屏')
+        self.protocol('WM_DELETE_WINDOW', self.close)
+        self.after(100, self.poll)
+
+    def show(self, name):
+        for p in self.pages.values(): p.grid_remove()
+        self.pages[name].grid(row=0, column=0, sticky='nsew')
+        for title, b in self.nav.items():
+            b.configure(fg_color=BLUE if title == name else '#EAF0F8',
+                        text_color='white' if title == name else MUTED)
+        self.current_page = name
+
+    def open_meeting(self):
+        try:
+            target = open_scheduler(lambda title, text: messagebox.showinfo(title, text, parent=self))
+            self.meeting_hint.configure(text='請在騰訊會議中選擇“預定會議”' if target == 'desktop' else '請登入網頁並選擇“預定會議”')
+        except OSError as exc:
+            messagebox.showerror('無法開啟騰訊會議', str(exc), parent=self)
+
+    def make_record(self):
+        page = ctk.CTkScrollableFrame(self.body, fg_color=BG)
+        page.grid_columnconfigure(0, weight=1)
+        label(page, '會議錄屏', 28, INK, True).grid(row=0, column=0, sticky='w', padx=28, pady=(23, 0))
+        label(page, '適用於會議、培訓和操作演示。', 13, MUTED).grid(row=1, column=0, sticky='w', padx=28, pady=(4, 17))
+        hero = ctk.CTkFrame(page, fg_color='#E4EEFF', corner_radius=18)
+        hero.grid(row=2, column=0, sticky='ew', padx=28); hero.grid_columnconfigure(0, weight=1)
+        label(hero, '錄製螢幕與會議聲音', 21, INK, True).grid(row=0, column=0, sticky='w', padx=24, pady=(20, 2))
+        label(hero, 'MP4  ·  720p / 1080p  ·  系統聲音 + 麥克風', 12, MUTED).grid(row=1, column=0, sticky='w', padx=24, pady=(0, 18))
+        self.timer = label(hero, '00:00:00', 31, BLUE, True)
+        self.timer.grid(row=0, column=1, rowspan=2, padx=25)
+        settings = ctk.CTkFrame(page, fg_color='white', corner_radius=16)
+        settings.grid(row=3, column=0, sticky='ew', padx=28, pady=16)
+        settings.grid_columnconfigure(1, weight=1)
+        self.rects = monitors()
+        self.monitor_names = [f'螢幕 {i+1}  ·  {r[2]} × {r[3]}' for i, r in enumerate(self.rects)]
+        label(settings, '錄製範圍', 13, INK, True).grid(row=0, column=0, padx=20, pady=(20, 12), sticky='w')
+        self.screen = ctk.CTkOptionMenu(settings, values=self.monitor_names, command=self.reset_region, fg_color=BLUE, width=245)
+        self.screen.grid(row=0, column=1, sticky='w', pady=(20,12))
+        self.select_region = button(settings, '框選區域', self.pick_region, color=TEAL, width=108)
+        self.select_region.grid(row=0, column=2, padx=20, pady=(20,12))
+        self.area_hint = label(settings, '錄製所選螢幕的完整畫面', 11, MUTED)
+        self.area_hint.grid(row=1, column=1, columnspan=2, sticky='w', pady=(0, 10))
+        label(settings, '畫面質量', 13, INK, True).grid(row=2, column=0, padx=20, pady=10, sticky='w')
+        quality_row = ctk.CTkFrame(settings, fg_color='transparent'); quality_row.grid(row=2,column=1,columnspan=2,sticky='w')
+        self.resolution = ctk.CTkSegmentedButton(quality_row, values=['720p 推薦', '1080p 清晰'], font=(FONT,13), selected_color=BLUE, height=35)
+        self.resolution.pack(side='left'); self.resolution.set('720p 推薦')
+        self.compact = ctk.CTkCheckBox(quality_row, text='優先小檔案', font=(FONT,12), width=135)
+        self.compact.pack(side='left', padx=20); self.compact.select()
+        label(settings, '聲音來源', 13, INK, True).grid(row=3, column=0, padx=20, pady=14, sticky='w')
+        audio = ctk.CTkFrame(settings, fg_color='transparent'); audio.grid(row=3,column=1,columnspan=2,sticky='w')
+        self.system = ctk.CTkSwitch(audio, text='系統聲音', font=(FONT,13)); self.system.pack(side='left'); self.system.select()
+        self.mic = ctk.CTkSwitch(audio, text='麥克風', font=(FONT,13)); self.mic.pack(side='left', padx=28)
+        label(settings, '使用 Windows 預設音訊裝置；會議建議佩戴耳機以減少回聲。', 11, MUTED).grid(row=4,column=1,columnspan=2,sticky='w',pady=(0,13))
+        label(settings, '儲存位置', 13, INK, True).grid(row=5,column=0,padx=20,pady=(0,20),sticky='w')
+        self.folder = ctk.CTkEntry(settings, height=35); self.folder.grid(row=5,column=1,sticky='ew',pady=(0,20))
+        self.folder.insert(0, str(Path.home()/'Videos'/'NEON MeetStudio'))
+        self.browse = button(settings, '更改目錄', self.choose_folder, width=108)
+        self.browse.grid(row=5,column=2,padx=20,pady=(0,20))
+        bar = ctk.CTkFrame(page, fg_color='transparent'); bar.grid(row=4,column=0,sticky='ew',padx=28)
+        self.start = button(bar, '開始錄製', self.begin, color='#DA4254', width=170); self.start.pack(side='left')
+        self.pause_button = button(bar, '暫停', self.pause_resume, width=95, state='disabled'); self.pause_button.pack(side='left',padx=10)
+        self.stop_button = button(bar, '停止並儲存', self.stop_record, width=115, state='disabled'); self.stop_button.pack(side='left')
+        button(bar, '開啟資料夾', self.open_folder, width=115).pack(side='right')
+        self.status = label(page, '準備就緒 · 開始後倒計時 3 秒，可隨時暫停。', 13, TEAL)
+        self.status.grid(row=5,column=0,sticky='w',padx=28,pady=(17,5))
+        label(page, '會議模式：15 幀/秒，優先保留文字細節。成片大小隨時長和畫面變化而變化。', 11, MUTED).grid(row=6,column=0,sticky='w',padx=28)
+        self.result = ctk.CTkFrame(page, fg_color='white', corner_radius=12)
+        self.result.grid(row=7,column=0,sticky='ew',padx=28,pady=16); self.result.grid_columnconfigure(0,weight=1)
+        self.result_text = label(self.result, '最近錄製\n完成後的 MP4 會顯示在這裡。', 12, MUTED, justify='left', anchor='w', wraplength=580)
+        self.result_text.grid(row=0,column=0,sticky='ew',padx=18,pady=14)
+        self.play = button(self.result,'播放',self.play_last,width=70,state='disabled'); self.play.grid(row=0,column=1,padx=16)
+        self.controls = [self.screen,self.select_region,self.resolution,self.compact,self.system,self.mic,self.folder,self.browse]
+        return page
+
+    def make_about(self):
+        page = ctk.CTkScrollableFrame(self.body, fg_color=BG)
+        label(page, '關於 NEON MeetStudio', 28, INK, True).pack(anchor='w',padx=28,pady=(25,5))
+        label(page, '錄屏與影音下載  /  '+VERSION, 13, MUTED).pack(anchor='w',padx=28,pady=(0,24))
+        card = ctk.CTkFrame(page, fg_color='white', corner_radius=18); card.pack(fill='x',padx=28)
+        label(card, '一個工作站，處理會議與影音', 24, BLUE, True).pack(anchor='w',padx=28,pady=(25,15))
+        for title, body in [
+            ('會議錄屏', '整屏或框選區域，720p / 1080p MP4。支援系統聲音、麥克風、暫停與繼續錄製。'),
+            ('影音下載', '貼上網址或分享文字，選擇畫質、音訊或字幕，並儲存到自己的資料夾。'),
+            ('預約騰訊會議', '開啟電腦版騰訊會議；未安裝時轉到官方網頁個人中心，登入後即可預約。'),
+            ('檔案與隱私', '錄製檔案儲存在本機。程式不會自動上傳錄屏，也不會代替你建立會議。')]:
+            section=ctk.CTkFrame(card,fg_color='#EAF2FF',corner_radius=12)
+            section.pack(fill='x',padx=28,pady=8)
+            label(section,title,17,INK,True).pack(anchor='w',padx=18,pady=(14,4))
+            label(section,body,13,MUTED,wraplength=650,justify='left').pack(anchor='w',padx=18,pady=(0,14))
+        label(card,'v'+VERSION+'  ·  Windows',12,MUTED).pack(anchor='w',padx=28,pady=20)
+        label(page,'開源元件與許可見隨程式附帶的 licenses。',12,MUTED).pack(anchor='w',padx=28,pady=20)
+        return page
+
+    def reset_region(self, value=None):
+        self.region=None; self.area_hint.configure(text='錄製所選螢幕的完整畫面')
+
+    def pick_region(self):
+        import tkinter as tk
+        x,y,w,h=self.rects[self.monitor_names.index(self.screen.get())]
+        overlay=tk.Toplevel(self); overlay.overrideredirect(True)
+        overlay.geometry(f'{w}x{h}{x:+d}{y:+d}'); overlay.attributes('-topmost',True); overlay.attributes('-alpha',.40)
+        canvas=tk.Canvas(overlay,bg='#10233D',cursor='crosshair',highlightthickness=0); canvas.pack(fill='both',expand=True)
+        canvas.create_text(w//2,45,text='拖動選擇錄製區域  ·  Esc 取消',fill='white',font=(FONT,20))
+        point={}
+        def down(e):
+            point['x'],point['y']=e.x,e.y
+            canvas.delete('selection')
+            point['item']=canvas.create_rectangle(e.x,e.y,e.x,e.y,outline='#9BDFFF',width=4,tags='selection')
+        def drag(e):
+            if 'item' in point: canvas.coords(point['item'],point['x'],point['y'],e.x,e.y)
+        def up(e):
+            if 'x' not in point:return
+            a,b=sorted((max(0,min(w,e.x)),point['x'])); c,d=sorted((max(0,min(h,e.y)),point['y']))
+            if b-a>=64 and d-c>=64:
+                self.region=(x+a,y+c,b-a,d-c); self.area_hint.configure(text=f'自定義區域：{b-a} × {d-c} 畫素'); overlay.destroy()
+        canvas.bind('<ButtonPress-1>',down); canvas.bind('<B1-Motion>',drag); canvas.bind('<ButtonRelease-1>',up)
+        overlay.bind('<Escape>',lambda e:overlay.destroy()); overlay.grab_set(); overlay.focus_force()
+
+    def choose_folder(self):
+        p=filedialog.askdirectory(parent=self)
+        if p:self.folder.delete(0,'end'); self.folder.insert(0,p)
+
+    def open_folder(self):
+        try:
+            p=Path(self.folder.get()).expanduser(); p.mkdir(parents=True,exist_ok=True); os.startfile(p)
+        except Exception as e:messagebox.showerror('無法開啟目錄',str(e),parent=self)
+
+    def play_last(self):
+        if self.last_file:
+            try:os.startfile(self.last_file)
+            except OSError as e:messagebox.showerror('無法播放',str(e),parent=self)
+
+    def set_state(self,state,text):
+        self.record_state=state; self.status.configure(text=text)
+        for w in self.controls:w.configure(state='normal' if state=='idle' else 'disabled')
+        self.start.configure(state='normal' if state=='idle' else 'disabled',fg_color='#DA4254' if state=='idle' else '#E1E7EF')
+        self.pause_button.configure(state='normal' if state in ('recording','paused') else 'disabled',text='繼續錄製' if state=='paused' else '暫停',fg_color=BLUE if state in ('recording','paused') else '#E1E7EF')
+        self.stop_button.configure(state='normal' if state in ('recording','paused','countdown') else 'disabled',fg_color=BLUE if state in ('recording','paused','countdown') else '#E1E7EF')
+        if self.floatbar and self.floatbar.winfo_exists():
+            self.float_pause.configure(state='normal' if state in ('recording','paused') else 'disabled',text='繼續' if state=='paused' else '暫停')
+            self.float_stop.configure(state='normal' if state in ('recording','paused') else 'disabled')
+
+    def background(self, action, success):
+        def work():
+            try:self.events.put((success,action()))
+            except Exception as exc:self.events.put(('error',str(exc)))
+        threading.Thread(target=work,daemon=True).start()
+
+    def begin(self):
+        if self.record_state!='idle':return
+        if not self.folder.get().strip():
+            messagebox.showerror('請選擇目錄','請先設定儲存位置。',parent=self); return
+        rect=self.region or self.rects[self.monitor_names.index(self.screen.get())]
+        self.pending=(self.folder.get(),rect,1080 if self.resolution.get().startswith('1080') else 720,bool(self.compact.get()),bool(self.system.get()),bool(self.mic.get()))
+        self.set_state('countdown','3 秒後開始錄製…')
+        self.countdown(3)
+
+    def countdown(self,n):
+        if self.record_state!='countdown':return
+        if n:
+            self.status.configure(text=f'{n} 秒後開始錄製… 點選“停止並儲存”可取消。')
+            self.countdown_id=self.after(1000,lambda:self.countdown(n-1)); return
+        self.set_state('starting','正在準備螢幕與聲音裝置…')
+        def start():
+            self.recorder=Recorder(*self.pending); self.recorder.start()
+        self.background(start,'started')
+
+    def floating(self):
+        if self.floatbar and self.floatbar.winfo_exists():return
+        self.floatbar=ctk.CTkToplevel(self); self.floatbar.title('NEON MeetStudio · 錄製中')
+        self.floatbar.geometry('440x70+30+30'); self.floatbar.resizable(False,False); self.floatbar.attributes('-topmost',True)
+        self.floatbar.configure(fg_color='white')
+        self.float_time=label(self.floatbar,'錄製中  00:00:00',14,BLUE,True); self.float_time.pack(side='left',padx=15)
+        self.float_pause=button(self.floatbar,'暫停',self.pause_resume,width=65); self.float_pause.pack(side='left',padx=5)
+        self.float_stop=button(self.floatbar,'停止',self.stop_record,color='#DA4254',width=65); self.float_stop.pack(side='left')
+        self.floatbar.protocol('WM_DELETE_WINDOW',self.restore)
+        # Keep the controller out of captured pixels on supported Windows versions.
+        self.floatbar.update_idletasks()
+        try:
+            hwnd=ctypes.windll.user32.GetParent(self.floatbar.winfo_id())
+            ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd),0x11)
+        except Exception:pass
+        self.iconify()
+
+    def restore(self):
+        self.deiconify(); self.lift()
+        if self.floatbar:self.floatbar.destroy(); self.floatbar=None
+
+    def pause_resume(self):
+        if self.record_state=='recording':
+            self.set_state('pausing','正在儲存當前片段…'); self.background(self.recorder.pause,'paused')
+        elif self.record_state=='paused':
+            self.set_state('starting','正在恢復錄製…'); self.background(self.recorder.start,'started')
+
+    def stop_record(self):
+        if self.record_state=='countdown':
+            if self.countdown_id:self.after_cancel(self.countdown_id)
+            self.set_state('idle','已取消錄製'); return
+        if self.record_state not in ('recording','paused'):return
+        self.set_state('saving','正在整理 MP4，請稍候…'); self.background(self.recorder.finish,'saved')
+
+    def poll(self):
+        for _ in range(20):
+            try:kind,value=self.events.get_nowait()
+            except queue.Empty:break
+            if kind=='started':self.set_state('recording','正在錄製 · 暫停期間不會計入影片'); self.floating()
+            elif kind=='paused':self.set_state('paused','已暫停 · 點選“繼續錄製”接著錄')
+            elif kind=='saved':
+                self.last_file=str(value); self.restore(); self.set_state('idle','已儲存 MP4')
+                self.result_text.configure(text=f'最近錄製  ·  {Path(value).stat().st_size/1048576:.1f} MB\n{value}')
+                self.play.configure(state='normal',fg_color=BLUE)
+            elif kind=='error':
+                self.restore(); self.set_state('idle','錄製未完成，請檢查提示後重試')
+                messagebox.showerror('錄製提示',value,parent=self)
+        if self.recorder and self.record_state!='idle':
+            seconds=int(self.recorder.elapsed()); text=f'{seconds//3600:02d}:{seconds//60%60:02d}:{seconds%60:02d}'
+            self.timer.configure(text=text)
+            if self.floatbar:self.float_time.configure(text=('已暫停  ' if self.record_state=='paused' else '錄製中  ')+text)
+            if self.record_state=='recording':
+                failed=self.recorder.process.poll() is not None or any(t.error for t,p in self.recorder.tracks)
+                if failed:self.stop_record()
+        self.after(150,self.poll)
+
+    def close(self):
+        if self.record_state=='countdown':self.stop_record()
+        if self.record_state!='idle':
+            messagebox.showinfo('請先儲存錄制','請先點選“停止並儲存”，等待 MP4 儲存完成後再退出。',parent=self); return
+        if self.download.busy:
+            if not messagebox.askyesno('退出程式','下載仍在進行，停止下載並退出？',parent=self):return
+            self.download.cancelled=True; self.download.kill()
+        self.destroy()
+
 
 def gui():
-    if getattr(sys,'frozen',False):
-        os.chdir(ROOT)
-        os.environ['TCL_LIBRARY']='_tcl_data'
-        os.environ['TK_LIBRARY']='_tk_data'
-    import customtkinter as ctk
-    from tkinter import filedialog, messagebox
-    ctk.set_appearance_mode('dark')
-    ctk.set_default_color_theme('blue')
-    BG, PANEL, MUTED, GREEN = '#0B1020', '#141D30', '#8B9AB6', '#5DE4C7'
-    class App(ctk.CTk):
-        def __init__(self):
-            super().__init__()
-            self.title('NEON Video / 影片下載工作站')
-            self.geometry('1120x800'); self.minsize(960,740)
-            self.configure(fg_color=BG)
-            self.events = queue.Queue(); self.process = None; self.busy = False; self.cancelled = False
-            self.ok = self.failed = 0
-            self.grid_columnconfigure(1,weight=1); self.grid_rowconfigure(0,weight=1)
-            side=ctk.CTkFrame(self,width=205,corner_radius=0,fg_color='#0F1729'); side.grid(row=0,column=0,sticky='nsew'); side.grid_propagate(False)
-            ctk.CTkLabel(side,text='N / NEON',font=('Segoe UI',27,'bold'),text_color=GREEN).pack(anchor='w',padx=25,pady=(35,0))
-            ctk.CTkLabel(side,text='VIDEO WORKSTATION',font=('Segoe UI',10),text_color=MUTED).pack(anchor='w',padx=27,pady=(0,45))
-            ctk.CTkLabel(side,text='  ↓    影片下載',fg_color='#21384A',corner_radius=10,height=44,text_color=GREEN,font=('Microsoft JhengHei UI',15,'bold')).pack(fill='x',padx=18)
-            ctk.CTkLabel(side,text='一個網址，收藏精彩。\n\n批次下載 / 高畫質 / 音訊\n自動合併 / 字幕 / 續傳',justify='left',text_color=MUTED,font=('Microsoft JhengHei UI',12),wraplength=165).pack(anchor='w',padx=25,pady=25)
-            ctk.CTkLabel(side,text='POWERED BY yt-dlp\nv1.1  •  Windows 64-bit',justify='left',text_color=MUTED,font=('Segoe UI',10)).pack(side='bottom',padx=25,pady=25)
-            main=ctk.CTkFrame(self,fg_color='transparent'); main.grid(row=0,column=1,sticky='nsew',padx=30,pady=25)
-            main.grid_columnconfigure(0,weight=1); main.grid_rowconfigure(7,weight=1)
-            ctk.CTkLabel(main,text='你的影片，隨手收藏。',font=('Microsoft JhengHei UI',28,'bold')).grid(row=0,column=0,sticky='w')
-            ctk.CTkLabel(main,text='YouTube / 抖音 / Facebook / TikTok / Instagram / 更多平台',text_color=MUTED,font=('Microsoft JhengHei UI',13)).grid(row=1,column=0,sticky='w',pady=(5,20))
-            card=ctk.CTkFrame(main,fg_color=PANEL,corner_radius=16); card.grid(row=2,column=0,sticky='ew'); card.grid_columnconfigure(0,weight=1)
-            top=ctk.CTkFrame(card,fg_color='transparent'); top.grid(row=0,column=0,sticky='ew',padx=20,pady=(15,8))
-            ctk.CTkLabel(top,text='01  /  影片連結',font=('Microsoft JhengHei UI',15,'bold')).pack(side='left')
-            ctk.CTkButton(top,text='貼上剪貼簿',width=110,fg_color='#283753',hover_color='#354969',command=self.paste).pack(side='right')
-            self.links=ctk.CTkTextbox(card,height=95,fg_color='#0C1425',border_width=1,border_color='#2A3952',font=('Segoe UI',13)); self.links.grid(row=1,column=0,sticky='ew',padx=20)
-            self.links.bind('<<Paste>>', lambda event: self.after(120, self.auto_paste), add='+')
-            ctk.CTkLabel(card,text='可直接貼分享文字 • 先選畫質再貼上 • 自動辨識平台',text_color=MUTED,font=('Microsoft JhengHei UI',11)).grid(row=2,column=0,sticky='w',padx=20,pady=(5,12))
-            settings=ctk.CTkFrame(main,fg_color=PANEL,corner_radius=16); settings.grid(row=3,column=0,sticky='ew',pady=14); settings.grid_columnconfigure(0,weight=1)
-            ctk.CTkLabel(settings,text='02  /  下載偏好',font=('Microsoft JhengHei UI',15,'bold')).grid(row=0,column=0,sticky='w',padx=20,pady=(12,8))
-            row=ctk.CTkFrame(settings,fg_color='transparent'); row.grid(row=1,column=0,sticky='ew',padx=20)
-            self.quality=ctk.CTkOptionMenu(row,values=QUALITY_CHOICES,fg_color='#283753',button_color='#354969',width=155); self.quality.pack(side='left')
-            self.sub=ctk.CTkCheckBox(row,text='下載字幕（中 / 英）',font=('Microsoft JhengHei UI',12),fg_color='#258E7B'); self.sub.pack(side='left',padx=25)
-            self.auto=ctk.CTkCheckBox(row,text='貼上即下載',font=('Microsoft JhengHei UI',12),fg_color='#258E7B',width=110)
-            self.auto.pack(side='left'); self.auto.select()
-            folderrow=ctk.CTkFrame(settings,fg_color='transparent'); folderrow.grid(row=2,column=0,sticky='ew',padx=20,pady=(12,16)); folderrow.grid_columnconfigure(0,weight=1)
-            self.folder=ctk.CTkEntry(folderrow,height=34); self.folder.grid(row=0,column=0,sticky='ew'); self.folder.insert(0,str(Path.home()/'Downloads'/'NEON'))
-            ctk.CTkButton(folderrow,text='選擇資料夾',width=105,fg_color='#283753',command=self.choose).grid(row=0,column=1,padx=(10,0))
-            actions=ctk.CTkFrame(main,fg_color='transparent'); actions.grid(row=4,column=0,sticky='ew',pady=(0,15))
-            self.start=ctk.CTkButton(actions,text='↓   開始下載',height=44,width=190,fg_color=GREEN,text_color='#09231F',hover_color='#8AF0DA',font=('Microsoft JhengHei UI',15,'bold'),command=self.run); self.start.pack(side='left')
-            self.inspect=ctk.CTkButton(actions,text='解析資訊',height=44,width=105,fg_color='#283753',command=lambda:self.run(True)); self.inspect.pack(side='left',padx=10)
-            self.stop=ctk.CTkButton(actions,text='停止',height=44,width=75,fg_color='#4A2B3D',state='disabled',command=self.cancel); self.stop.pack(side='left')
-            ctk.CTkButton(actions,text='開啟資料夾 ↗',height=44,width=120,fg_color='#283753',command=self.open_folder).pack(side='right')
-            self.status=ctk.CTkLabel(main,text='準備就緒',anchor='w',font=('Microsoft JhengHei UI',13),text_color=GREEN); self.status.grid(row=5,column=0,sticky='ew')
-            self.progress=ctk.CTkProgressBar(main,progress_color=GREEN,fg_color='#25324B',height=7); self.progress.grid(row=6,column=0,sticky='ew',pady=(8,12)); self.progress.set(0)
-            self.log=ctk.CTkTextbox(main,fg_color='#0F1729',font=('Microsoft JhengHei UI',12),height=115); self.log.grid(row=7,column=0,sticky='nsew'); self.log.configure(state='disabled')
-            ctk.CTkLabel(main,text='請僅下載你有權儲存的內容。網站支援依 yt-dlp 而定；不支援 DRM 保護影片。',text_color=MUTED,font=('Microsoft JhengHei UI',10)).grid(row=8,column=0,sticky='w',pady=(10,0))
-            self.protocol('WM_DELETE_WINDOW',self.close); self.after(100,self.poll)
-        def addlog(self,text):
-            self.log.configure(state='normal'); self.log.insert('end',time.strftime('%H:%M:%S')+'  '+text+'\n'); self.log.see('end'); self.log.configure(state='disabled')
-        def paste(self):
-            try:
-                text=self.clipboard_get().strip()
-                self.links.delete('1.0','end')
-                self.links.insert('end',text)
-                self.auto_paste()
-            except Exception: pass
-        def auto_paste(self):
-            if self.auto.get() and not self.busy:
-                try: valid_urls(self.links.get('1.0','end'))
-                except ValueError: return
-                self.run()
-        def choose(self):
-            p=filedialog.askdirectory()
-            if p: self.folder.delete(0,'end'); self.folder.insert(0,p)
-        def open_folder(self):
-            try:
-                p=Path(self.folder.get()).expanduser(); p.mkdir(parents=True,exist_ok=True); os.startfile(p)
-            except Exception as e: messagebox.showerror('無法開啟',str(e))
-        def run(self,inspect=False):
-            if self.busy:return
-            try:
-                urls=valid_urls(self.links.get('1.0','end')); folder=Path(self.folder.get()).expanduser().resolve(); folder.mkdir(parents=True,exist_ok=True)
-            except Exception as e: messagebox.showerror('請檢查輸入',str(e)); return
-            job=dict(urls=urls,folder=str(folder),quality=self.quality.get(),subtitles=bool(self.sub.get()),inspect=inspect)
-            self.busy=True; self.cancelled=False; self.ok=self.failed=0; self.total=len(urls); self.progress.set(0)
-            self.quality.configure(state='disabled')
-            self.start.configure(state='disabled'); self.inspect.configure(state='disabled'); self.stop.configure(state='normal')
-            self.status.configure(text='正在解析影片…'); self.addlog(f'開始處理 {len(urls)} 個連結')
-            threading.Thread(target=self.launch,args=(job,),daemon=True).start()
-        def launch(self,job):
-            try:
-                cmd=[sys.executable,'--worker'] if getattr(sys,'frozen',False) else [sys.executable,str(ROOT / 'main.py'),'--worker']
-                with tempfile.TemporaryDirectory(prefix='neon-') as temp:
-                    config=Path(temp)/'job.json'; events=Path(temp)/'events.jsonl'
-                    config.write_text(json.dumps(job),encoding='utf-8'); events.touch()
-                    self.process=subprocess.Popen(cmd+[str(config),str(events)],creationflags=subprocess.CREATE_NO_WINDOW)
-                    if self.cancelled:self.kill()
-                    with events.open(encoding='utf-8') as stream:
-                        while True:
-                            line=stream.readline()
-                            if line:
-                                try:self.events.put(json.loads(line))
-                                except ValueError:self.events.put(dict(kind='log',text=line.strip()))
-                            elif self.process.poll() is not None:break
-                            else:time.sleep(.08)
-                    code=self.process.wait()
-                self.events.put(dict(kind='exit',code=code))
-            except Exception as e:self.events.put(dict(kind='error',text=str(e))); self.events.put(dict(kind='exit',code=1))
-        def kill(self):
-            p=self.process
-            if p and p.poll() is None:
-                subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'],capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
-        def cancel(self):
-            self.cancelled=True; self.stop.configure(state='disabled'); self.status.configure(text='正在停止…'); threading.Thread(target=self.kill,daemon=True).start()
-        def poll(self):
-            for _ in range(200):
-                try:d=self.events.get_nowait()
-                except queue.Empty:break
-                k=d['kind']
-                if k=='item':self.addlog(f"[{d['index']+1}/{self.total}] {d.get('platform', '網站')} · 解析連結…")
-                elif k=='progress':
-                    self.progress.set(d['fraction']); eta=d.get('eta'); self.status.configure(text=('下載完成，正在合併 / 轉換…' if d['status']=='finished' else f"下載中  {d['fraction']:.0%}  ·  {d['speed']/1048576:.1f} MB/s  ·  剩餘 {eta if eta is not None else '—'} 秒"))
-                elif k=='success':
-                    self.ok+=1; self.addlog(('解析成功：' if d.get('inspect') else '下載完成：')+d['title'])
-                    if d.get('inspect'):
-                        labels=[f'{h}p' for h in d.get('heights', [])]
-                        self.addlog('來源提供的影片高度：'+(' / '.join(labels) if labels else '網站未提供，仍可選最佳畫質'))
-                elif k in ('log','error'):
-                    self.addlog(d['text'])
-                    if k=='error':self.failed+=1
-                elif k=='exit':
-                    self.busy=False; self.process=None; self.start.configure(state='normal'); self.inspect.configure(state='normal'); self.stop.configure(state='disabled')
-                    self.quality.configure(state='normal')
-                    msg='已停止；保留部分檔案供下次續傳。' if self.cancelled else f'處理結束  ·  成功 {self.ok}  /  失敗 {self.failed}'
-                    if d['code'] and not self.cancelled: msg+='  ·  引擎異常退出'
-                    self.status.configure(text=msg); self.addlog(msg)
-                    if self.ok==self.total:self.progress.set(1)
-            self.after(100,self.poll)
-        def close(self):
-            if self.busy:
-                if not messagebox.askyesno('結束下載','正在處理下載，確定停止並關閉？'):return
-                self.cancelled=True; self.kill()
-            self.destroy()
+    ctk.set_appearance_mode('light'); ctk.set_default_color_theme('blue')
     app=App()
     if '--ui-test' in sys.argv:
+        target=Path(sys.argv[sys.argv.index('--ui-test')+1])
         def check():
-            app.update_idletasks()
-            result={'title':app.title(),'width':app.winfo_width(),'height':app.winfo_height(),
-                    'start_button':app.start.cget('text'),'status':app.status.cget('text'),
-                    'log_height':app.log.winfo_height()}
-            Path(sys.argv[sys.argv.index('--ui-test')+1]).write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
-            app.destroy()
-        app.after(1500,check)
+            from PIL import ImageGrab
+            import pyaudiowpatch
+            with pyaudiowpatch.PyAudio() as audio:
+                device_count=audio.get_device_count()
+            results={'audio_device_count':device_count}
+            for name in app.pages:
+                app.show(name); app.update()
+                box=(app.winfo_rootx(),app.winfo_rooty(),app.winfo_rootx()+app.winfo_width(),app.winfo_rooty()+app.winfo_height())
+                ImageGrab.grab(bbox=box).save(target.with_name(target.stem+'-'+name+'.png'))
+                results[name]={'width':app.winfo_width(),'height':app.winfo_height()}
+            target.write_text(json.dumps(results,ensure_ascii=False),encoding='utf-8'); app.destroy()
+        app.after(1800,check)
     app.mainloop()
-

@@ -1,4 +1,4 @@
-"""背景下載程序：JSON 任務輸入，JSONL 事件輸出。"""
+"""背景下載程式：JSON 任務輸入，JSONL 事件輸出。"""
 import json
 from pathlib import Path
 from .downloader import options
