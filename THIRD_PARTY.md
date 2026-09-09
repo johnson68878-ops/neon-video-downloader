@@ -18,3 +18,8 @@ FFmpeg is distributed as a separate, unmodified executable within the applicatio
 Its version, build configuration and licensing are recorded in `licenses/FFmpeg-version.txt` and `licenses/FFmpeg-license.txt`.
 The bundled FFmpeg is 7.1 essentials by Gyan, licensed under GPL v3 or later. Binary supplier and build/source references: https://github.com/imageio/imageio-ffmpeg and https://www.gyan.dev/ffmpeg/builds/ . FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/n7.1 .
 Consult the FFmpeg build license before redistributing a modified package.
+
+
+## Meeting service icons
+
+Zoom, Teams, Google Meet and Webex icons: homarr-labs/dashboard-icons (Apache-2.0), see licenses/dashboard-icons/LICENSE. Tencent icon: official WeMeet client resource, used to identify the launch target; respective trademark rights remain with their owners. See docs/MEETING-LAUNCHERS.md.

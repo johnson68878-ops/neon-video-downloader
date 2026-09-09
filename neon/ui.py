@@ -1,4 +1,4 @@
-"""NEON MeetStudio — simplified Chinese native desktop shell."""
+"""NEON MeetStudio — Traditional Chinese native desktop shell."""
 import ctypes
 import json
 import os
@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox
 from .runtime import ROOT
 from .recorder import Recorder, monitors
 from .download_ui import build_download
-from .meetings import open_scheduler
+from .meeting_ui import MeetingPage
 
 BG = '#F3F6FB'
 INK = '#182D48'
@@ -20,7 +20,7 @@ MUTED = '#586C84'
 BLUE = '#1262CC'
 TEAL = '#087F8C'
 FONT = 'Microsoft YaHei UI'
-VERSION = '2.1.0'
+VERSION = '2.2.0'
 
 
 def label(parent, text, size=14, color=INK, bold=False, **kw):
@@ -38,7 +38,10 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title('NEON MeetStudio · 錄屏與影音下載')
-        self.geometry('1180x820+40+40'); self.minsize(1040, 760)
+        scale = self._get_window_scaling()
+        width = max(960, min(1180, int(self.winfo_screenwidth()/scale)-60))
+        height = max(600, min(820, int(self.winfo_screenheight()/scale)-80))
+        self.minsize(960, 600); self.geometry(f'{width}x{height}+20+20')
         if (ROOT/'assets'/'meetstudio.ico').exists():self.iconbitmap(str(ROOT/'assets'/'meetstudio.ico'))
         self.configure(fg_color=BG)
         self.events = queue.Queue(); self.recorder = None
@@ -50,15 +53,15 @@ class App(ctk.CTk):
         label(header, 'NEON', 23, BLUE, True).pack(side='left', padx=(24, 22))
         label(header, '會議影音工作站', 21, INK, True).pack(side='left')
         label(header, 'MeetStudio', 13, MUTED).pack(side='left', padx=10)
-        self.meeting_button = button(header, '預約騰訊會議', self.open_meeting, width=140)
+        self.meeting_button = button(header, '會議預約', lambda:self.show('會議預約'), width=140)
         self.meeting_button.pack(side='right', padx=25)
-        self.meeting_hint = label(header, '開啟後選擇“預定會議”', 12, MUTED)
+        self.meeting_hint = label(header, 'Zoom · Teams · Meet · 更多', 12, MUTED)
         self.meeting_hint.pack(side='right')
         sidebar = ctk.CTkFrame(self, width=185, corner_radius=0, fg_color='#EAF0F8')
         sidebar.grid(row=1, column=0, sticky='nsew'); sidebar.grid_propagate(False)
         label(sidebar, '工作空間', 12, MUTED).pack(anchor='w', padx=22, pady=(27, 15))
         self.nav = {}
-        for name in ['會議錄屏', '影音下載', '關於程式']:
+        for name in ['會議錄屏', '影音下載', '會議預約', '關於程式']:
             b = button(sidebar, name, lambda n=name: self.show(n), width=150)
             b.pack(padx=16, pady=5); self.nav[name] = b
         label(sidebar, f'版本 {VERSION}\nWindows · 本地儲存', 11, MUTED, justify='left').pack(side='bottom', anchor='w', padx=22, pady=16)
@@ -67,6 +70,7 @@ class App(ctk.CTk):
         self.pages = {}
         self.record_page = self.make_record(); self.pages['會議錄屏'] = self.record_page
         self.download = build_download(self.body); self.pages['影音下載'] = self.download
+        self.meeting_page = MeetingPage(self.body); self.pages['會議預約'] = self.meeting_page
         self.pages['關於程式'] = self.make_about()
         self.show('會議錄屏')
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -79,13 +83,6 @@ class App(ctk.CTk):
             b.configure(fg_color=BLUE if title == name else '#EAF0F8',
                         text_color='white' if title == name else MUTED)
         self.current_page = name
-
-    def open_meeting(self):
-        try:
-            target = open_scheduler(lambda title, text: messagebox.showinfo(title, text, parent=self))
-            self.meeting_hint.configure(text='請在騰訊會議中選擇“預定會議”' if target == 'desktop' else '請登入網頁並選擇“預定會議”')
-        except OSError as exc:
-            messagebox.showerror('無法開啟騰訊會議', str(exc), parent=self)
 
     def make_record(self):
         page = ctk.CTkScrollableFrame(self.body, fg_color=BG)
@@ -151,7 +148,7 @@ class App(ctk.CTk):
         for title, body in [
             ('會議錄屏', '整屏或框選區域，720p / 1080p MP4。支援系統聲音、麥克風、暫停與繼續錄製。'),
             ('影音下載', '貼上網址或分享文字，選擇畫質、音訊或字幕，並儲存到自己的資料夾。'),
-            ('預約騰訊會議', '開啟電腦版騰訊會議；未安裝時轉到官方網頁個人中心，登入後即可預約。'),
+            ('會議預約', '提供 Zoom、Teams、Google Meet、騰訊會議與 Webex。本機優先，未安裝時開啟官方網頁。'),
             ('檔案與隱私', '錄製檔案儲存在本機。程式不會自動上傳錄屏，也不會代替你建立會議。')]:
             section=ctk.CTkFrame(card,fg_color='#EAF2FF',corner_radius=12)
             section.pack(fill='x',padx=28,pady=8)

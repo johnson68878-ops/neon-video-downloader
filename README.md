@@ -7,11 +7,9 @@ Windows 本地桌面應用：會議錄屏與影音下載。繁體中文介面。
 
 雙擊 `dist/NEON-MeetStudio.exe`。獨立 EXE 內含 Python、FFmpeg 與 Node.js。
 
-## 預約騰訊會議
+## 會議預約
 
-點選右上角“預約騰訊會議”，優先啟動 `C:\Program Files\Tencent\WeMeet\WeMeetApp.exe`，也檢查系統 Program Files / Program Files (x86) 下的同名路徑。
-未找到或啟動失敗時，提示後自動開啟 https://meeting.tencent.com/user-center 。
-登入客戶端或網頁後選擇“預定會議”，填寫時間並確認；本程式不會自動建立會議。
+新增獨立分頁，提供五個平台圖示、本機優先啟動、網頁登入與自訂路徑。詳見 [偵測方式與來源](docs/MEETING-LAUNCHERS.md)。
 
 ## 會議錄屏
 
