@@ -1,4 +1,4 @@
-"""NEON MeetStudio — Traditional Chinese native desktop shell."""
+"""NOVA Studio — Traditional Chinese native desktop shell."""
 import ctypes
 import json
 import os
@@ -20,7 +20,7 @@ MUTED = '#586C84'
 BLUE = '#1262CC'
 TEAL = '#087F8C'
 FONT = 'Microsoft YaHei UI'
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 
 
 def label(parent, text, size=14, color=INK, bold=False, **kw):
@@ -37,7 +37,7 @@ def button(parent, text, command, color=BLUE, **kw):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title('NEON MeetStudio · 錄屏與影音下載')
+        self.title('曜影 NOVA Studio · 錄屏與影音下載')
         scale = self._get_window_scaling()
         width = max(960, min(1180, int(self.winfo_screenwidth()/scale)-60))
         height = max(600, min(820, int(self.winfo_screenheight()/scale)-80))
@@ -50,9 +50,9 @@ class App(ctk.CTk):
         self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(1, weight=1)
         header = ctk.CTkFrame(self, fg_color='white', corner_radius=0, height=68)
         header.grid(row=0, column=0, columnspan=2, sticky='ew'); header.pack_propagate(False)
-        label(header, 'NEON', 23, BLUE, True).pack(side='left', padx=(24, 22))
-        label(header, '會議影音工作站', 21, INK, True).pack(side='left')
-        label(header, 'MeetStudio', 13, MUTED).pack(side='left', padx=10)
+        label(header, 'NOVA', 23, BLUE, True).pack(side='left', padx=(24, 22))
+        label(header, '曜影工作站', 21, INK, True).pack(side='left')
+        label(header, 'Studio', 13, MUTED).pack(side='left', padx=10)
         self.meeting_button = button(header, '會議預約', lambda:self.show('會議預約'), width=140)
         self.meeting_button.pack(side='right', padx=25)
         self.meeting_hint = label(header, 'Zoom · Teams · Meet · 更多', 12, MUTED)
@@ -141,8 +141,14 @@ class App(ctk.CTk):
 
     def make_about(self):
         page = ctk.CTkScrollableFrame(self.body, fg_color=BG)
-        label(page, '關於 NEON MeetStudio', 28, INK, True).pack(anchor='w',padx=28,pady=(25,5))
+        label(page, '關於曜影 NOVA Studio', 28, INK, True).pack(anchor='w',padx=28,pady=(25,5))
         label(page, '錄屏與影音下載  /  '+VERSION, 13, MUTED).pack(anchor='w',padx=28,pady=(0,24))
+        author = ctk.CTkFrame(page, fg_color='white', corner_radius=18)
+        author.pack(fill='x', padx=28, pady=(0,18))
+        label(author, '開發者', 13, TEAL, True).pack(anchor='w', padx=28, pady=(22,8))
+        label(author, '聯發科最後的清流 小胖老師帥哥凱', 19, BLUE, True, wraplength=580, justify='left').pack(anchor='w', padx=28, pady=(0,10))
+        label(author, '黃仲凱  John Huang', 18, INK, True).pack(anchor='w', padx=28, pady=(0,12))
+        label(author, '電話：+886-913229579\n郵件：kai.huang@msa.hinet.net', 14, MUTED, justify='left').pack(anchor='w', padx=28, pady=(0,22))
         card = ctk.CTkFrame(page, fg_color='white', corner_radius=18); card.pack(fill='x',padx=28)
         label(card, '一個工作站，處理會議與影音', 24, BLUE, True).pack(anchor='w',padx=28,pady=(25,15))
         for title, body in [
@@ -234,7 +240,7 @@ class App(ctk.CTk):
 
     def floating(self):
         if self.floatbar and self.floatbar.winfo_exists():return
-        self.floatbar=ctk.CTkToplevel(self); self.floatbar.title('NEON MeetStudio · 錄製中')
+        self.floatbar=ctk.CTkToplevel(self); self.floatbar.title('NOVA Studio · 錄製中')
         self.floatbar.geometry('440x70+30+30'); self.floatbar.resizable(False,False); self.floatbar.attributes('-topmost',True)
         self.floatbar.configure(fg_color='white')
         self.float_time=label(self.floatbar,'錄製中  00:00:00',14,BLUE,True); self.float_time.pack(side='left',padx=15)

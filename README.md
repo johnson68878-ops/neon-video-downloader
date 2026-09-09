@@ -1,11 +1,11 @@
-# NEON MeetStudio · 會議影音工作站
+# 曜影 NOVA Studio · 會議影音工作站
 
 Windows 本地桌面應用：會議錄屏與影音下載。繁體中文介面。
 
 
 ## 直接執行
 
-雙擊 `dist/NEON-MeetStudio.exe`。獨立 EXE 內含 Python、FFmpeg 與 Node.js。
+雙擊 `dist/NOVA-Studio.exe`。獨立 EXE 內含 Python、FFmpeg 與 Node.js。
 
 ## 會議預約
 
@@ -53,7 +53,7 @@ py -3.13 -m venv .venv
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-`build.ps1` 生成 `dist/NEON-MeetStudio.exe`，沒有數字簽名。
+`build.ps1` 生成 `dist/NOVA-Studio.exe`，沒有數字簽名。
 原始碼入口為 `main.py`；錄屏引擎 `neon/recorder.py`；主介面 `neon/ui.py`；下載頁 `neon/download_ui.py`。
 第三方許可證隨包放在 `licenses`，來源見 `THIRD_PARTY.md`。
 
@@ -64,3 +64,11 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - Windows 截圖工具的錄製互動：https://support.microsoft.com/en-us/windows/apps/use-snipping-tool-to-capture-screenshots
 
 介面與業務程式碼在本專案實現，未複製格式工廠的閉原始碼。
+
+## 開發者
+
+聯發科最後的清流 小胖老師帥哥凱
+
+黃仲凱 John Huang  
+電話：+886-913229579  
+郵件：kai.huang@msa.hinet.net
