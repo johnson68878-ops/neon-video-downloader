@@ -236,9 +236,10 @@ class Recorder:
             self.log.close(); self.log = None
         return errors
 
-    def pause(self):
+    def pause(self, progress=None):
         if not self.active:
             return
+        if progress: progress(.10, '正在結束螢幕與聲音錄製…')
         self.duration = self.elapsed()
         self.active = False
         errors = self._close_inputs()
@@ -247,6 +248,7 @@ class Recorder:
             raise RuntimeError(self.last_error + f'。原始檔案：{self.work}')
         output = self.work / f'segment-{len(self.segments)}.mp4'
         duration = media_duration(self.video)
+        if progress: progress(.36, '正在合併畫面與聲音…')
         args = ['-i', str(self.video)]
         filters = []
         for index, (track, path) in enumerate(self.tracks, 1):
@@ -269,21 +271,26 @@ class Recorder:
         self.video.unlink(missing_ok=True)
         for track, path in self.tracks:
             path.unlink(missing_ok=True)
+        if progress: progress(.72, '目前錄製片段已完成整理…')
 
-    def finish(self):
+    def finish(self, progress=None):
         if self.last_error:
             raise RuntimeError(self.last_error + f'。原始檔案：{self.work}')
-        self.pause()
+        if progress: progress(.03, '正在完成錄製，請勿關閉程式…')
+        self.pause(progress)
         if not self.segments:
             raise RuntimeError('沒有可儲存的錄製片段。請保留恢復資料夾：'+str(self.work))
         listing = self.work/'concat.txt'
         listing.write_text(''.join(f"file '{p.name}'\n" for p in self.segments), encoding='utf-8')
         # Work on a temporary MP4 so an interrupted merge never masquerades as a finished recording.
         staging = self.work/'final.mp4'
+        if progress: progress(.78, '正在合併錄製片段…')
         run_ffmpeg(['-f', 'concat', '-safe', '0', '-i', str(listing), '-c', 'copy',
                     '-movflags', '+faststart', str(staging)], self.work/'merge.log')
+        if progress: progress(.94, '正在寫入最終 MP4…')
         staging.replace(self.output)
         # Only remove this session's directory after the MP4 is safely published.
         if self.work.parent == self.folder and self.work.name.startswith('.錄製中-'):
             shutil.rmtree(self.work)
+        if progress: progress(1, 'MP4 已儲存完成')
         return self.output

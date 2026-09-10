@@ -20,7 +20,7 @@ MUTED = '#586C84'
 BLUE = '#1262CC'
 TEAL = '#087F8C'
 FONT = 'Microsoft YaHei UI'
-VERSION = '2.2.1'
+VERSION = '2.2.2'
 
 
 def label(parent, text, size=14, color=INK, bold=False, **kw):
@@ -130,9 +130,18 @@ class App(ctk.CTk):
         button(bar, '開啟資料夾', self.open_folder, width=115).pack(side='right')
         self.status = label(page, '準備就緒 · 開始後倒計時 3 秒，可隨時暫停。', 13, TEAL)
         self.status.grid(row=5,column=0,sticky='w',padx=28,pady=(17,5))
-        label(page, '會議模式：15 幀/秒，優先保留文字細節。成片大小隨時長和畫面變化而變化。', 11, MUTED).grid(row=6,column=0,sticky='w',padx=28)
+        self.save_panel = ctk.CTkFrame(page, fg_color='#E4EEFF', corner_radius=10)
+        self.save_panel.grid(row=6,column=0,sticky='ew',padx=28,pady=(5,2)); self.save_panel.grid_columnconfigure(0,weight=1)
+        self.save_detail = label(self.save_panel, '正在準備 MP4…', 12, INK, True)
+        self.save_detail.grid(row=0,column=0,sticky='w',padx=16,pady=(11,4))
+        self.save_percent = label(self.save_panel, '0%', 12, BLUE, True)
+        self.save_percent.grid(row=0,column=1,sticky='e',padx=16,pady=(11,4))
+        self.save_bar = ctk.CTkProgressBar(self.save_panel, height=10, progress_color=BLUE, fg_color='#C9D8EE')
+        self.save_bar.grid(row=1,column=0,columnspan=2,sticky='ew',padx=16,pady=(0,12)); self.save_bar.set(0)
+        self.save_panel.grid_remove()
+        label(page, '會議模式：15 幀/秒，優先保留文字細節。成片大小隨時長和畫面變化而變化。', 11, MUTED).grid(row=7,column=0,sticky='w',padx=28)
         self.result = ctk.CTkFrame(page, fg_color='white', corner_radius=12)
-        self.result.grid(row=7,column=0,sticky='ew',padx=28,pady=16); self.result.grid_columnconfigure(0,weight=1)
+        self.result.grid(row=8,column=0,sticky='ew',padx=28,pady=16); self.result.grid_columnconfigure(0,weight=1)
         self.result_text = label(self.result, '最近錄製\n完成後的 MP4 會顯示在這裡。', 12, MUTED, justify='left', anchor='w', wraplength=580)
         self.result_text.grid(row=0,column=0,sticky='ew',padx=18,pady=14)
         self.play = button(self.result,'播放',self.play_last,width=70,state='disabled'); self.play.grid(row=0,column=1,padx=16)
@@ -205,6 +214,7 @@ class App(ctk.CTk):
 
     def set_state(self,state,text):
         self.record_state=state; self.status.configure(text=text)
+        if state != 'saving': self.save_panel.grid_remove()
         for w in self.controls:w.configure(state='normal' if state=='idle' else 'disabled')
         self.start.configure(state='normal' if state=='idle' else 'disabled',fg_color='#DA4254' if state=='idle' else '#E1E7EF')
         self.pause_button.configure(state='normal' if state in ('recording','paused') else 'disabled',text='繼續錄製' if state=='paused' else '暫停',fg_color=BLUE if state in ('recording','paused') else '#E1E7EF')
@@ -270,7 +280,17 @@ class App(ctk.CTk):
             if self.countdown_id:self.after_cancel(self.countdown_id)
             self.set_state('idle','已取消錄製'); return
         if self.record_state not in ('recording','paused'):return
-        self.set_state('saving','正在整理 MP4，請稍候…'); self.background(self.recorder.finish,'saved')
+        self.set_state('saving','正在整理 MP4，請稍候…')
+        self.show_save_progress(.03, '正在完成錄製，請勿關閉程式…')
+        self.background(lambda: self.recorder.finish(self.show_save_progress_from_worker),'saved')
+
+    def show_save_progress_from_worker(self, value, text):
+        self.events.put(('save_progress', (value, text)))
+
+    def show_save_progress(self, value, text):
+        value=max(0,min(1,value)); self.save_bar.set(value)
+        self.save_detail.configure(text=text); self.save_percent.configure(text=f'{round(value*100)}%')
+        self.save_panel.grid()
 
     def poll(self):
         for _ in range(20):
@@ -278,6 +298,7 @@ class App(ctk.CTk):
             except queue.Empty:break
             if kind=='started':self.set_state('recording','正在錄製 · 暫停期間不會計入影片'); self.floating()
             elif kind=='paused':self.set_state('paused','已暫停 · 點選“繼續錄製”接著錄')
+            elif kind=='save_progress':self.show_save_progress(*value)
             elif kind=='saved':
                 self.last_file=str(value); self.restore(); self.set_state('idle','已儲存 MP4')
                 self.result_text.configure(text=f'最近錄製  ·  {Path(value).stat().st_size/1048576:.1f} MB\n{value}')

@@ -52,3 +52,16 @@ class RecorderTests(unittest.TestCase):
             self.assertEqual(result.read_bytes(), b'finished')
             self.assertEqual(unrelated.read_bytes(), b'original')
             self.assertFalse(r.work.exists())
+
+    def test_finish_reports_clear_processing_stages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            r = Recorder(directory, (0, 0, 640, 360), system=False)
+            segment = r.work/'segment-0.mp4'; segment.write_bytes(b'segment')
+            r.segments = [segment]
+            stages = []
+            def mux(args, log): Path(args[-1]).write_bytes(b'finished')
+            with patch('neon.recorder.run_ffmpeg', side_effect=mux), patch.object(r, 'pause') as pause:
+                r.finish(lambda value, text: stages.append((value, text)))
+            self.assertEqual(stages[0][0], .03)
+            self.assertIn('合併錄製片段', stages[1][1])
+            self.assertEqual(stages[-1], (1, 'MP4 已儲存完成'))
